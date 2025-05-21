@@ -10,7 +10,7 @@ from freqtrade.strategy import merge_informative_pair # Ensure this import is av
 import logging
 logger = logging.getLogger(__name__) # Optional: For custom logging
 
-class MultiTimeframeDivergence(IStrategy): # Renamed class slightly for clarity if you have old versions
+class MTFD(IStrategy):
     INTERFACE_VERSION = 3 # Set to 3 for recent Freqtrade versions
 
     # Strategy timeframe, primary timeframe for calculations and candle exits
