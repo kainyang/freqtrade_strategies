@@ -19,6 +19,9 @@ class MTFD(IStrategy):
     # Strategy timeframe
     timeframe = '1m'
 
+    # Informative timeframes
+    informative_timeframes = ['3m', '5m']
+
     # ROI table (Futures context)
     minimal_roi = {"0": 1.50}
 
@@ -65,15 +68,13 @@ class MTFD(IStrategy):
         current_rsi_buffer = self.rsi_buffer.value
 
         # Pre-initialize all expected informative columns at the very beginning
-        # This ensures they exist if merges are skipped or if merge_informative_pair
-        # doesn't create them and we don't catch it immediately after.
-        for tf_info_str_prefix_init in ['3m', '5m']:
+        for tf_info_str_prefix_init in self.informative_timeframes:
             for signal_suffix_init in ['bullish_div', 'bearish_div']:
                 col_name_init = f'inf_{tf_info_str_prefix_init}_{signal_suffix_init}'
                 if col_name_init not in dataframe.columns:
                     dataframe[col_name_init] = False
 
-        for tf_info_str in ['3m', '5m']:
+        for tf_info_str in self.informative_timeframes:
             inf_df = self.dp.get_pair_dataframe(pair=metadata['pair'], timeframe=tf_info_str)
             if inf_df.empty:
                 logger.info(f"Informative dataframe for {metadata['pair']} timeframe {tf_info_str} is empty. Pre-initialized columns will be used.")
@@ -119,7 +120,7 @@ class MTFD(IStrategy):
         
         # Final check before returning - this is mostly for sanity checking during development.
         # The loop above should handle individual TFs.
-        for tf_final_check in ['3m', '5m']:
+        for tf_final_check in self.informative_timeframes:
             for sig_final_check in ['bullish_div', 'bearish_div']:
                 final_col_name = f'inf_{tf_final_check}_{sig_final_check}'
                 if final_col_name not in dataframe.columns:
