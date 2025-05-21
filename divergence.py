@@ -1,6 +1,4 @@
-# --- freqtrade strategy: MTFD ---
-# Ensure your Freqtrade version is recent enough to support all imported modules,
-# especially FloatParameter from freqtrade.strategy.
+# --- freqtrade strategy: MTFD (Updated to use DecimalParameter) ---
 
 # Required imports
 from functools import reduce
@@ -9,29 +7,27 @@ import logging
 import talib.abstract as ta
 from pandas import DataFrame, Series
 
-from freqtrade.exchange import timeframe_to_prev_date # Not directly used, but good practice
+from freqtrade.exchange import timeframe_to_prev_date
 from freqtrade.persistence import Trade # For type hinting in custom_exit
-from freqtrade.strategy import (IStrategy, IntParameter, FloatParameter, CategoricalParameter, merge_informative_pair)
+# MODIFIED IMPORT: Replaced FloatParameter with DecimalParameter
+from freqtrade.strategy import (IStrategy, IntParameter, DecimalParameter, CategoricalParameter, merge_informative_pair)
 
 logger = logging.getLogger(__name__)
 
-class MTFD(IStrategy): # Class name updated
+class MTFD(IStrategy):
     INTERFACE_VERSION = 3
 
-    # Strategy timeframe, primary timeframe for calculations and candle exits
+    # Strategy timeframe
     timeframe = '1m'
 
-    # ROI table:
-    # Targets 150% profit based on a 1:5 risk/reward ratio with a 30% stoploss.
-    # In futures markets, this ROI is potentially achievable for both long and short positions.
+    # ROI table (Futures context)
     minimal_roi = {"0": 1.50}
 
-    # Stoploss:
-    stoploss = -0.30  # 30% stoploss
+    # Stoploss
+    stoploss = -0.30
 
-    # Custom exit for 30-candle rule
     use_custom_exit = True
-    process_only_new_candles = True # Recommended for most strategies
+    process_only_new_candles = True
 
     # --- Strategy Parameters ---
     rsi_period = 14
@@ -40,7 +36,8 @@ class MTFD(IStrategy): # Class name updated
     div_lookback_3m = IntParameter(8, 25, default=12, space="buy sell")
     div_lookback_5m = IntParameter(6, 20, default=10, space="buy sell")
 
-    rsi_buffer = FloatParameter(0.0, 3.0, default=0.5, decimals=1, space="buy sell")
+    # MODIFIED PARAMETER DEFINITION: Using DecimalParameter instead of FloatParameter
+    rsi_buffer = DecimalParameter(0.0, 3.0, default=0.5, decimals=1, space="buy sell")
 
     # --- Helper function to detect divergence ---
     def _check_divergence(self, dataframe: DataFrame, price_col_name: str, osc_col_name: str, lookback: int, divergence_type: str, rsi_bf: float) -> Series:
@@ -121,10 +118,10 @@ class MTFD(IStrategy): # Class name updated
                 dataframe[col] = False
 
         bullish_cond_1m_3m = dataframe[col_b_1m] & dataframe[col_b_3m]
-        bullish__cond_1m_5m = dataframe[col_b_1m] & dataframe[col_b_5m] # Corrected variable name
+        bullish_cond_1m_5m = dataframe[col_b_1m] & dataframe[col_b_5m] # Corrected typo from previous full version
 
         dataframe.loc[
-            (bullish_cond_1m_3m | bullish_cond_1m_5m) & # Corrected variable name used here
+            (bullish_cond_1m_3m | bullish_cond_1m_5m) & # Corrected typo used here
             (dataframe['volume'] > 0),
             'enter_long'] = 1
 
