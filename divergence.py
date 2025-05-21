@@ -61,6 +61,7 @@ class MTFD(IStrategy):
 
     # --- Populate indicators for informative timeframes (3m, 5m) ---
     def informative_populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+        logger.info(f"ENTERING informative_populate_indicators for {metadata['pair']}. Initial DF columns: {dataframe.columns.tolist()}")
         current_rsi_buffer = self.rsi_buffer.value
 
         # Pre-initialize all expected informative columns at the very beginning
@@ -125,16 +126,19 @@ class MTFD(IStrategy):
                     # This would be unexpected if the logic above is correct.
                     logger.error(f"CRITICAL STRATEGY ERROR: Column '{final_col_name}' is MISSING from dataframe for {metadata['pair']} just before returning from informative_populate_indicators. Setting to False.")
                     dataframe[final_col_name] = False
+        logger.info(f"EXITING informative_populate_indicators for {metadata['pair']}. Final DF columns: {dataframe.columns.tolist()}")
         return dataframe
 
     # --- Populate indicators for base timeframe (1m) ---
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+        logger.info(f"ENTERING populate_indicators for {metadata['pair']}. Received DF columns: {dataframe.columns.tolist()}")
         current_rsi_buffer = self.rsi_buffer.value
         lookback_1m = self.div_lookback_1m.value
 
         dataframe['rsi_1m'] = ta.RSI(dataframe['close'], timeperiod=self.rsi_period)
         dataframe['bullish_div_1m'] = self._check_divergence(dataframe, 'low', 'rsi_1m', lookback_1m, 'bullish', current_rsi_buffer)
         dataframe['bearish_div_1m'] = self._check_divergence(dataframe, 'high', 'rsi_1m', lookback_1m, 'bearish', current_rsi_buffer)
+        logger.info(f"EXITING populate_indicators for {metadata['pair']}. Final DF columns: {dataframe.columns.tolist()}")
         return dataframe
 
     # --- Populate Entry Signals ---
