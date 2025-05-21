@@ -63,17 +63,21 @@ class MTFD(IStrategy):
     def informative_populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         current_rsi_buffer = self.rsi_buffer.value
 
-        # Pre-initialize informative columns to ensure they exist
-        for tf_info_str_prefix in ['3m', '5m']:
-            for signal_suffix in ['bullish_div', 'bearish_div']:
-                col_name = f'inf_{tf_info_str_prefix}_{signal_suffix}'
-                if col_name not in dataframe.columns:
-                    dataframe[col_name] = False
+        # Pre-initialize all expected informative columns at the very beginning
+        # This ensures they exist if merges are skipped or if merge_informative_pair
+        # doesn't create them and we don't catch it immediately after.
+        for tf_info_str_prefix_init in ['3m', '5m']:
+            for signal_suffix_init in ['bullish_div', 'bearish_div']:
+                col_name_init = f'inf_{tf_info_str_prefix_init}_{signal_suffix_init}'
+                if col_name_init not in dataframe.columns:
+                    dataframe[col_name_init] = False
 
         for tf_info_str in ['3m', '5m']:
             inf_df = self.dp.get_pair_dataframe(pair=metadata['pair'], timeframe=tf_info_str)
             if inf_df.empty:
-                logger.info(f"Informative dataframe for {metadata['pair']} timeframe {tf_info_str} is empty. Defining empty signal columns.")
+                logger.info(f"Informative dataframe for {metadata['pair']} timeframe {tf_info_str} is empty. Pre-initialized columns will be used.")
+                # Columns for this tf_info_str should already be pre-initialized to False.
+                # No merge will happen, so we continue to the next timeframe.
                 continue
 
             inf_df[f'rsi_{tf_info_str}'] = ta.RSI(inf_df['close'], timeperiod=self.rsi_period)
@@ -86,23 +90,41 @@ class MTFD(IStrategy):
             inf_df[f'bearish_div'] = self._check_divergence(inf_df, 'high', f'rsi_{tf_info_str}', lookback_val, 'bearish', current_rsi_buffer)
 
             columns_to_merge = [f'bullish_div', f'bearish_div']
-            # Filter for columns that actually exist in inf_df and are not empty (have some data)
             existing_cols_in_inf_df = [
-                col for col in columns_to_merge 
-                if col in inf_df.columns and not inf_df[col].empty
+                col for col in columns_to_merge
+                if col in inf_df.columns and not inf_df[col].empty # Check if series has data points
             ]
 
             if existing_cols_in_inf_df and not inf_df.empty: # ensure inf_df has rows and selected columns have data
-                # Select only the valid columns from inf_df for merging
                 informative_data_to_merge = inf_df[existing_cols_in_inf_df]
                 if not informative_data_to_merge.empty:
                      dataframe = merge_informative_pair(dataframe, informative_data_to_merge, self.timeframe, tf_info_str, ffill=True, append_prefix=True)
+
+                     # After merge, explicitly ensure the target columns for THIS timeframe exist.
+                     # This is because merge_informative_pair might return a new dataframe
+                     # and might not create a column if its source in informative_data_to_merge was all False/NaN.
+                     expected_signal_cols_for_tf = [f'inf_{tf_info_str}_bullish_div', f'inf_{tf_info_str}_bearish_div']
+                     for col_name in expected_signal_cols_for_tf:
+                         if col_name not in dataframe.columns:
+                             logger.warning(
+                                 f"Strategy Dev: Column '{col_name}' was not found in dataframe after merge for {tf_info_str} on {metadata['pair']}. "
+                                 f"Adding it as False. This might indicate an issue with merge_informative_pair or source data."
+                             )
+                             dataframe[col_name] = False
                 else:
-                    logger.info(f"Informative data slice for {tf_info_str} became empty after selecting columns. Skipping merge. Columns remain default.")
+                    logger.info(f"Informative data slice for {tf_info_str} on {metadata['pair']} became empty after selecting columns. Merge skipped. Pre-initialized columns used.")
             else:
-                 # If no valid columns to merge from inf_df, or inf_df was empty initially (handled by continue),
-                 # the pre-initialized columns in the main 'dataframe' will remain as False.
-                 logger.info(f"No valid data in inf_df for {tf_info_str} to merge or inf_df was empty. Columns remain default.")
+                 logger.info(f"No valid data in inf_df for {tf_info_str} on {metadata['pair']} to merge or inf_df was empty. Merge skipped. Pre-initialized columns used.")
+        
+        # Final check before returning - this is mostly for sanity checking during development.
+        # The loop above should handle individual TFs.
+        for tf_final_check in ['3m', '5m']:
+            for sig_final_check in ['bullish_div', 'bearish_div']:
+                final_col_name = f'inf_{tf_final_check}_{sig_final_check}'
+                if final_col_name not in dataframe.columns:
+                    # This would be unexpected if the logic above is correct.
+                    logger.error(f"CRITICAL STRATEGY ERROR: Column '{final_col_name}' is MISSING from dataframe for {metadata['pair']} just before returning from informative_populate_indicators. Setting to False.")
+                    dataframe[final_col_name] = False
         return dataframe
 
     # --- Populate indicators for base timeframe (1m) ---
