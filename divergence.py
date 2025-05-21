@@ -1,7 +1,6 @@
 # --- freqtrade strategy: MTFD (Updated to use DecimalParameter) ---
 
 # Required imports
-from functools import reduce
 import logging
 
 import talib.abstract as ta
@@ -10,7 +9,7 @@ from pandas import DataFrame, Series
 from freqtrade.exchange import timeframe_to_prev_date
 from freqtrade.persistence import Trade # For type hinting in custom_exit
 # MODIFIED IMPORT: Replaced FloatParameter with DecimalParameter
-from freqtrade.strategy import (IStrategy, IntParameter, DecimalParameter, CategoricalParameter, merge_informative_pair)
+from freqtrade.strategy import (IStrategy, IntParameter, DecimalParameter, merge_informative_pair)
 
 logger = logging.getLogger(__name__)
 
@@ -64,12 +63,17 @@ class MTFD(IStrategy):
     def informative_populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         current_rsi_buffer = self.rsi_buffer.value
 
+        # Pre-initialize informative columns to ensure they exist
+        for tf_info_str_prefix in ['3m', '5m']:
+            for signal_suffix in ['bullish_div', 'bearish_div']:
+                col_name = f'inf_{tf_info_str_prefix}_{signal_suffix}'
+                if col_name not in dataframe.columns:
+                    dataframe[col_name] = False
+
         for tf_info_str in ['3m', '5m']:
             inf_df = self.dp.get_pair_dataframe(pair=metadata['pair'], timeframe=tf_info_str)
             if inf_df.empty:
                 logger.info(f"Informative dataframe for {metadata['pair']} timeframe {tf_info_str} is empty. Defining empty signal columns.")
-                dataframe[f'inf_{tf_info_str}_bullish_div'] = False
-                dataframe[f'inf_{tf_info_str}_bearish_div'] = False
                 continue
 
             inf_df[f'rsi_{tf_info_str}'] = ta.RSI(inf_df['close'], timeperiod=self.rsi_period)
@@ -82,13 +86,23 @@ class MTFD(IStrategy):
             inf_df[f'bearish_div'] = self._check_divergence(inf_df, 'high', f'rsi_{tf_info_str}', lookback_val, 'bearish', current_rsi_buffer)
 
             columns_to_merge = [f'bullish_div', f'bearish_div']
-            existing_cols_in_inf_df = [col for col in columns_to_merge if col in inf_df.columns]
+            # Filter for columns that actually exist in inf_df and are not empty (have some data)
+            existing_cols_in_inf_df = [
+                col for col in columns_to_merge 
+                if col in inf_df.columns and not inf_df[col].empty
+            ]
 
-            if existing_cols_in_inf_df:
-                dataframe = merge_informative_pair(dataframe, inf_df[existing_cols_in_inf_df], self.timeframe, tf_info_str, ffill=True, append_prefix=True)
+            if existing_cols_in_inf_df and not inf_df.empty: # ensure inf_df has rows and selected columns have data
+                # Select only the valid columns from inf_df for merging
+                informative_data_to_merge = inf_df[existing_cols_in_inf_df]
+                if not informative_data_to_merge.empty:
+                     dataframe = merge_informative_pair(dataframe, informative_data_to_merge, self.timeframe, tf_info_str, ffill=True, append_prefix=True)
+                else:
+                    logger.info(f"Informative data slice for {tf_info_str} became empty after selecting columns. Skipping merge. Columns remain default.")
             else:
-                 for col_base_name in columns_to_merge:
-                     dataframe[f'inf_{tf_info_str}_{col_base_name}'] = False
+                 # If no valid columns to merge from inf_df, or inf_df was empty initially (handled by continue),
+                 # the pre-initialized columns in the main 'dataframe' will remain as False.
+                 logger.info(f"No valid data in inf_df for {tf_info_str} to merge or inf_df was empty. Columns remain default.")
         return dataframe
 
     # --- Populate indicators for base timeframe (1m) ---
